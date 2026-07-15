@@ -1,86 +1,97 @@
 # TruthGuard
 
-TruthGuard is an AI-powered fact-checking web app. Paste a URL, an article, or a social media post, and it extracts the underlying factual claims, gathers evidence from live web search and existing fact-checks, and returns a verdict (True / False / Misleading / Unverified / Satire / Too Recent) with a credibility score and cited sources.
+**Know what's real before you share it.**
 
-Built with Next.js (App Router), Supabase, and Groq (Llama 3.3 70B).
+TruthGuard is an AI-powered, real-time misinformation detection tool. Paste in a claim, a piece of text, or a URL (even a screenshot of a social post) and get back an evidence-backed verdict — TRUE, FALSE, MISLEADING, UNVERIFIED, SATIRE, or TOO RECENT — along with a confidence score and the sources behind the decision.
 
-## How it works
+## Why
 
-1. **Input** — the user submits a URL, raw text, or a social media post via the input form.
-2. **Content extraction** — for URLs, `scraper.ts` fetches the page and pulls the article body using Cheerio (Open Graph tags, common article selectors, then a paragraph fallback).
-3. **Claim extraction** — the content is sent to Groq (Llama 3.3 70B) via `lib/claude.ts`, which extracts 3–5 standalone, verifiable factual claims and ranks their importance.
-4. **Cache check** — the main claim is hashed (SHA-256) and checked against `cached_claims` in Supabase; cache hits skip the search/verification steps and return instantly.
-5. **Evidence gathering** — on a cache miss, the top claims are searched in parallel via the Tavily Search API (`lib/tavily.ts`, with a DuckDuckGo fallback), and cross-referenced against Google's Fact Check Tools API (`lib/factcheck.ts`).
-6. **Verification** — claims, search results, and any existing fact-checks are sent back to Groq, which returns a verdict, confidence score, reasoning, and supporting/contradicting sources as structured JSON.
-7. **Scoring** — `lib/scorer.ts` computes a final 0–100 credibility score from a weighted blend of source credibility (40%), corroboration ratio (30%), and model confidence (30%), using a built-in table of known publisher credibility ratings.
-8. **Persistence** — the result is saved to the `checks` table and cached in `cached_claims` for 24 hours (Supabase).
-9. **Output** — the user sees a verdict card, confidence meter, and source list, and can share the result via a shareable result page (`/result/[id]`).
+Misinformation spreads faster than fact-checkers can keep up with it. TruthGuard shortens that gap by combining an LLM's reasoning with live web search and established fact-checking databases, so anyone can get a sourced credibility check in seconds instead of digging through search results themselves.
 
-## Tech stack
+## How It Works
+
+1. **Input** — Submit a claim as raw text, a URL, or a screenshot (social post / article).
+2. **Extraction** — For URLs, the article body is scraped and cleaned (via Cheerio); for images, text is extracted with OCR.
+3. **Claim identification** — The core factual claims are pulled out and ranked by importance.
+4. **Evidence gathering** — Each claim is checked against:
+   - **Tavily** web search for current, relevant sources (with a DuckDuckGo fallback)
+   - **Google Fact Check Tools API** for existing fact-checks from known publishers
+5. **Verdict & scoring** — An LLM weighs the supporting and contradicting evidence and produces a verdict, a confidence score, and a plain-language summary. Sources are weighted by a built-in publisher credibility model (e.g. wire services and scientific journals score higher than partisan outlets).
+6. **Result** — A shareable result card shows the verdict, confidence meter, reasoning, and every source used, split into "supports" and "contradicts."
+7. **History** — Past checks are cached (24-hour claim cache) and stored so recent checks can be revisited instantly.
+
+## Features
+
+- **Multi-input support** — text, URL, or social media screenshot
+- **OCR** for extracting claims from images
+- **Live web search** grounding via Tavily, with fallback search
+- **Cross-reference** against the Google Fact Check Tools database
+- **Confidence scoring** with a transparent, publisher-weighted credibility model
+- **Source breakdown** — see exactly which sources support or contradict a claim
+- **Recent checks / history** — powered by Supabase, with claim-level caching to avoid re-verifying the same claim twice
+- **Shareable result cards** for individual verdicts
+- **Light/dark theme**
+
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 16 (App Router), React 19, TypeScript |
-| Styling / UI | Tailwind CSS 4, shadcn/ui, Base UI, Framer Motion, next-themes |
-| LLM | Groq API (`llama-3.3-70b-versatile` for text, `llama-4-scout` for image OCR) |
-| Web search | Tavily Search API (DuckDuckGo Instant Answer API as fallback) |
-| Fact-check lookup | Google Fact Check Tools API |
-| Database | Supabase (Postgres) |
+| Framework | [Next.js](https://nextjs.org) (App Router) + React 19 + TypeScript |
+| Styling / UI | Tailwind CSS, shadcn/ui, Framer Motion, Lucide icons |
+| LLM reasoning & OCR | Groq (Llama 3.3 70B) |
+| Web search | Tavily Search API |
+| Fact-check database | Google Fact Check Tools API |
 | Scraping | Cheerio |
+| Database / cache | Supabase (Postgres) |
 
-## Project structure
+## Project Structure
 
 ```
 src/
 ├── app/
-│   ├── api/verify/route.ts   # Main verification pipeline (POST endpoint)
-│   ├── dashboard/             # Dashboard view
-│   ├── result/[id]/           # Shareable result page
-│   ├── page.tsx               # Landing / input page
-│   └── layout.tsx
-├── components/                 # UI components (VerdictCard, ConfidenceMeter, SourceList, etc.)
-│   └── ui/                     # shadcn/ui primitives
-├── lib/
-│   ├── claude.ts               # Groq calls: claim extraction, verification, image OCR
-│   ├── tavily.ts                # Web search + fallback
-│   ├── factcheck.ts             # Google Fact Check Tools integration
-│   ├── scraper.ts               # URL → article text extraction
-│   ├── scorer.ts                # Credibility scoring + source enrichment
-│   ├── supabase.ts              # Supabase client (anon + service role)
-│   └── utils.ts
-└── types/index.ts              # Shared types + verdict display config
+│   ├── api/
+│   │   ├── verify/     # main claim-verification endpoint
+│   │   ├── ocr/        # image  text extraction
+│   │   ├── search/     # source lookup
+│   │   └── history/    # recent checks
+│   ├── dashboard/      # history / stats view
+│   ├── result/[id]/    # shareable result page
+│   └── page.tsx        # landing / input page
+├── components/          # UI components (VerdictCard, ConfidenceMeter, SourceList, etc.)
+├── lib/                 # claude.ts, tavily.ts, factcheck.ts, scraper.ts, scorer.ts, supabase.ts
+└── types/                # shared TypeScript types
 supabase/
-└── migration.sql               # `checks` and `cached_claims` tables
+└── migration.sql         # database schema (checks, cached_claims)
 ```
 
-> **Note:** despite the file name `lib/claude.ts`, the LLM calls in this project go to the **Groq API** (Llama 3.3 70B), not the Anthropic Claude API.
-
-## Getting started
+## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
 - A [Supabase](https://supabase.com) project
-- API keys for [Groq](https://console.groq.com), [Tavily](https://tavily.com), and (optional) [Google Fact Check Tools](https://developers.google.com/fact-check/tools/api)
+- API keys for Groq, Tavily, and (optionally) Google Fact Check Tools
 
-### 1. Install dependencies
+### 1. Clone and install
 
 ```bash
+git clone <repo-url>
+cd Truthguard
 npm install
 ```
 
-### 2. Configure environment variables
+### 2. Set up environment variables
 
 Create a `.env.local` file in the project root:
 
 ```bash
-# Groq (LLM for claim extraction & verification)
+# Groq (LLM reasoning + OCR)
 GROQ_API_KEY=your_groq_api_key
 
 # Tavily (web search)
 TAVILY_API_KEY=your_tavily_api_key
 
-# Google Fact Check Tools API (optional — verification degrades gracefully without it)
+# Google Fact Check Tools (optional but recommended)
 GOOGLE_FACT_CHECK_API_KEY=your_google_api_key
 
 # Supabase
@@ -91,7 +102,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 ### 3. Set up the database
 
-Run `supabase/migration.sql` in the Supabase SQL Editor to create the `checks` and `cached_claims` tables (with the `verdict_type` and `input_type` enums, and indexes for user, verdict, and cache-expiry lookups).
+Run `supabase/migration.sql` in your Supabase project's SQL editor. This creates the `checks` and `cached_claims` tables along with the necessary enums and indexes.
 
 ### 4. Run the dev server
 
@@ -99,49 +110,12 @@ Run `supabase/migration.sql` in the Supabase SQL Editor to create the `checks` a
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-### Other scripts
-
-```bash
-npm run build   # Production build
-npm run start   # Start production server
-npm run lint    # Run ESLint
-```
-
-## API
-
-### `POST /api/verify`
-
-**Request body:**
-```json
-{
-  "input": "https://example.com/article or raw text",
-  "type": "url" | "text" | "social"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "verdict": "true | false | misleading | unverified | satire | too_recent",
-  "confidence_score": 0,
-  "summary": "Plain-English summary",
-  "sources": [ { "title": "", "url": "", "publisher": "", "credibility_score": 0, "supports_claim": true } ],
-  "extracted_claims": [ { "claim": "", "importance": "high | medium | low" } ],
-  "created_at": "ISO timestamp"
-}
-```
-
-Anonymous requests are rate-limited to **10 checks per hour per IP** (in-memory limiter; resets on server restart, so a distributed limiter such as Upstash Redis is recommended for production/multi-instance deployments).
+Open [http://localhost:3000](http://localhost:3000) to use the app.
 
 ## Deployment
 
-Deploys cleanly to [Vercel](https://vercel.com). Note the `maxDuration = 60` on the verify route — this requires a **Vercel Pro** plan; on the Hobby tier the hard timeout is 10s, and slow searches/scrapes may 504. Remember to add all environment variables from `.env.local` to your Vercel project settings, and to run the Supabase migration against your production database.
+TruthGuard is a standard Next.js app and deploys cleanly to [Vercel](https://vercel.com) — connect the repo, add the environment variables above in the project settings, and deploy.
 
-## Limitations
+## Disclaimer
 
-- Verdicts are only as good as the search results and fact-check data available at query time — very recent events may correctly return `TOO_RECENT` or `UNVERIFIED`.
-- The publisher credibility table in `lib/scorer.ts` is a fixed list of well-known outlets; unlisted domains default to a low baseline score.
-- The in-memory rate limiter does not persist across server restarts or scale across multiple instances.
+TruthGuard is an AI-assisted tool intended to support media literacy, not to serve as a final legal or journalistic authority. Always use your own judgment and consult primary sources for high-stakes decisions.
